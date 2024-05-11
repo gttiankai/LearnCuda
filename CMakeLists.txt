@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(LearnCuda CUDA CXX)
+if(POLICY CMP0146)
+    cmake_policy(SET CMP0146 OLD)
+endif()
+find_package(CUDA REQUIRED)
+
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -33,7 +38,7 @@ foreach (file ${files})
     add_executable(${exe} ${file})
     set_target_properties(${exe} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
     set_target_properties(${exe} PROPERTIES CUDA_ARCHITECTURES "${SUPPORT_ARCHITECTURES}")
-    target_link_libraries(${exe} ${CUDA_LIBRARIES} ${CUDA_CUBLAS_LIBRARIES})
+    target_link_libraries(${exe} PRIVATE ${CUDA_LIBRARIES} ${CUDA_CUBLAS_LIBRARIES})
     target_compile_options(${exe} PRIVATE "--ptxas-options=-v,-warn-lmem-usage,--warn-on-spills")
     message(--\ src/${exe}.cu\ will\ be\ compiled\ to\ bin/${exe})
 endforeach ()

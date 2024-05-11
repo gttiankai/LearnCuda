@@ -9,7 +9,7 @@ DerivePointerAlignment: true
 PointerAlignment: Left
 
 # Only sort headers in each include block
-SortIncludes: true
+SortIncludes: CaseSensitive
 IncludeBlocks: Preserve
 
 # 让 #if/#else/#endif 宏中的内容保持缩进，比如：
@@ -25,6 +25,9 @@ ForEachMacros: ['']
 
 # 行注释 "//" 前增加两个空格
 SpacesBeforeTrailingComments: 2
-
-#缩进宽度
+# 连续赋值时,对齐等号
+AlignConsecutiveAssignments: Consecutive
+# 禁用将比较短的方法放在同一行
+AllowShortFunctionsOnASingleLine: None
+# 缩进宽度
 IndentWidth: 4
