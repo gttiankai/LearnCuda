@@ -38,6 +38,42 @@
         }                                                      \
     }
 
+const char *cublasGetErrorString(cublasStatus_t error) {
+    switch (error) {
+        case CUBLAS_STATUS_SUCCESS:
+            return "CUBLAS_STATUS_SUCCESS";
+        case CUBLAS_STATUS_NOT_INITIALIZED:
+            return "CUBLAS_STATUS_NOT_INITIALIZED";
+        case CUBLAS_STATUS_ALLOC_FAILED:
+            return "CUBLAS_STATUS_ALLOC_FAILED";
+        case CUBLAS_STATUS_INVALID_VALUE:
+            return "CUBLAS_STATUS_INVALID_VALUE";
+        case CUBLAS_STATUS_ARCH_MISMATCH:
+            return "CUBLAS_STATUS_ARCH_MISMATCH";
+        case CUBLAS_STATUS_MAPPING_ERROR:
+            return "CUBLAS_STATUS_MAPPING_ERROR";
+        case CUBLAS_STATUS_EXECUTION_FAILED:
+            return "CUBLAS_STATUS_EXECUTION_FAILED";
+        case CUBLAS_STATUS_INTERNAL_ERROR:
+            return "CUBLAS_STATUS_INTERNAL_ERROR";
+        case CUBLAS_STATUS_NOT_SUPPORTED:
+            return "CUBLAS_STATUS_NOT_SUPPORTED";
+        case CUBLAS_STATUS_LICENSE_ERROR:
+            return "CUBLAS_STATUS_LICENSE_ERROR";
+        default:
+            return "Unknown error";
+    }
+}
+
+#define CUBLAS_CHECK(status)                                      \
+    {                                                             \
+        if (status != CUBLAS_STATUS_SUCCESS) {                    \
+            printf("ERROR: %s:%d,", __FILE__, __LINE__);          \
+            printf("Error: %s.\n", cublasGetErrorString(status)); \
+            exit(1);                                              \
+        }                                                         \
+    }
+
 #include <time.h>
 
 #ifdef _WIN32
@@ -110,14 +146,42 @@ void initDevice(int devNum) {
 }
 
 template <typename T>
-void CheckResult(T *hostRef, T *gpuRef, const int N) {
-    double epsilon = 1.0E-2;
-    std::cout.precision(4);
+void CheckResult(T *stand, T *ref, const int N, bool verbose = false) {
+    double epsilon = 1.0E-3;
+    int print_num  = std::min(128, N);
     for (int i = 0; i < N; i++) {
-        if (abs((float)hostRef[i] - (float)gpuRef[i]) > epsilon) {
-            printf("the matrix does not align at index: %d", i);
+        if (abs((float)stand[i] - (float)ref[i]) > epsilon) {
+            printf("the matrix does not align at index: %d\n", i);
+            for (int j = 0; j < print_num; ++j) {
+                printf("stand[%3d]:%f vs ref[%3d]:%f diff: %f\n", j, (float)stand[j], j, (float)ref[j],
+                       (float)stand[j] - (float)ref[j]);
+            }
             return;
         }
     }
+    if (verbose) {
+        for (int i = 0; i < print_num; ++i) {
+            printf("stand[%3d]:%f vs ref[%3d]:%f diff: %f\n", i, (float)stand[i], i, (float)ref[i],
+                   (float)stand[i] - (float)ref[i]);
+        }
+    }
     printf("Check result success!\n");
+}
+
+/**
+ * Transpose Matrix
+ * Matrix[M, N] -> Matrix[N, M]
+ *
+ * */
+template <typename T>
+void Transpose2D(T *matrix, const int M, const int N) {
+    assert(matrix != nullptr);
+    auto buffer = new float[M * N]();
+    for (int m = 0; m < M; m++) {
+        for (int n = 0; n < N; n++) {
+            buffer[n * M + m] = matrix[m * N + n];
+        }
+    }
+    memcpy(matrix, buffer, M * N * sizeof(T));
+    delete[] buffer;
 }
