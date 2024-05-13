@@ -53,15 +53,15 @@ int gettimeofday(struct timeval *tp, void *tzp) {
     struct tm tm;
     SYSTEMTIME wtm;
     GetLocalTime(&wtm);
-    tm.tm_year = wtm.wYear - 1900;
-    tm.tm_mon = wtm.wMonth - 1;
-    tm.tm_mday = wtm.wDay;
-    tm.tm_hour = wtm.wHour;
-    tm.tm_min = wtm.wMinute;
-    tm.tm_sec = wtm.wSecond;
+    tm.tm_year  = wtm.wYear - 1900;
+    tm.tm_mon   = wtm.wMonth - 1;
+    tm.tm_mday  = wtm.wDay;
+    tm.tm_hour  = wtm.wHour;
+    tm.tm_min   = wtm.wMinute;
+    tm.tm_sec   = wtm.wSecond;
     tm.tm_isdst = -1;
-    clock = mktime(&tm);
-    tp->tv_sec = clock;
+    clock       = mktime(&tm);
+    tp->tv_sec  = clock;
     tp->tv_usec = wtm.wMilliseconds * 1000;
     return (0);
 }
@@ -109,18 +109,13 @@ void initDevice(int devNum) {
     CUDA_CHECK(cudaSetDevice(dev));
 }
 
-void checkResult(float *hostRef, float *gpuRef, const int N) {
-    double epsilon = 1.0E-4;
+template <typename T>
+void CheckResult(T *hostRef, T *gpuRef, const int N) {
+    double epsilon = 1.0E-2;
     std::cout.precision(4);
     for (int i = 0; i < N; i++) {
-        if (abs(hostRef[i] - gpuRef[i]) > epsilon) {
-            std::cout << "the matrix does not align at index: " << i << " " << hostRef[i] << " vs " << gpuRef[i]
-                      << std::endl;
-            int count = std::min(N, 1024);
-            for (int c = 0; c < count; c++) {
-                std::cout << "index: " << c << " \t" << hostRef[c] << " vs " << gpuRef[c]
-                          << "\tdiff:" << gpuRef[c] - hostRef[c] << std::endl;
-            }
+        if (abs((float)hostRef[i] - (float)gpuRef[i]) > epsilon) {
+            printf("the matrix does not align at index: %d", i);
             return;
         }
     }

@@ -15,6 +15,8 @@
 #include <iostream>
 #include "cuda_utils.cuh"
 
+
+
 __global__ void LdMatrixM8N8X1() {
     __shared__ uint32_t tile[8 * 4];
 
@@ -27,8 +29,8 @@ __global__ void LdMatrixM8N8X1() {
     __syncthreads();
     uint32_t a[1];
     uint32_t tile_index = thread_idx % 8 * 4;
-    uint32_t smem = __cvta_generic_to_shared(tile + tile_index);
-    int index = smem / 8;
+    uint32_t smem       = __cvta_generic_to_shared(tile + tile_index);
+    uint32_t index      = smem / 8;
 
     asm("ldmatrix.sync.aligned.m8n8.x1.shared.b16 { %0}, [ %1 ];\n" : "=r"(a[0]) : "r"(smem));
 
@@ -48,15 +50,17 @@ __global__ void LdMatrixM8N8X2() {
     }
     __syncthreads();
     uint32_t a[2];
-    // uint32_t tile_index = thread_idx % 16 * 4;
+    // layout 1
     uint32_t tile_index = thread_idx % 8 * 8 + thread_idx / 8 * 4;
+    // layout 2
+    // uint32_t tile_index = thread_idx % 16 * 4;
     uint32_t smem = __cvta_generic_to_shared(tile + tile_index);
     uint32_t index = smem / 8;
 
     asm("ldmatrix.sync.aligned.m8n8.x2.shared.b16 {%0, %1}, [%2];\n" : "=r"(a[0]), "=r"(a[1]) : "r"(smem));
 
     if (true) {
-        printf("thread_idx: %3u, load mem ptr:%3u matrix[%3u,%3u]: %3d [%3u,%3u]: %3d \n", thread_idx, smem, index,
+        printf("thread_idx: %3u, load mem ptr:%3u matrix[%3u,%3u]: %3d [%3u,%3u]: %3d\n", thread_idx, smem, index,
                index + 1, a[0], index + 64, index + 64 + 1, a[1]);
     }
 }
@@ -74,8 +78,8 @@ __global__ void LdMatrixM8N8X4() {
     uint32_t a[4];
     // uint32_t tile_index = thread_idx % 32 * 4;
     uint32_t tile_index = thread_idx % 16 * 8 + thread_idx / 16 * 4;
-    uint32_t smem = __cvta_generic_to_shared(tile + tile_index);
-    uint32_t index = smem / 8;
+    uint32_t smem       = __cvta_generic_to_shared(tile + tile_index);
+    uint32_t index      = smem / 8;
     asm("ldmatrix.sync.aligned.m8n8.x4.shared.b16 { %0, %1, %2, %3 }, [ %4 ];\n"
         : "=r"(a[0]), "=r"(a[1]), "=r"(a[2]), "=r"(a[3])
         : "r"(smem));
@@ -89,21 +93,21 @@ __global__ void LdMatrixM8N8X4() {
 
 int main(int argc, char* argv[]) {
     uint3 block = {32, 1, 1};
-    uint3 grid = {1, 1, 1};
-    //    printf("invoke LdMatrixM8N8X1\n");
-    //    LdMatrixM8N8X1<<<grid, block>>>();
-    //    cudaDeviceSynchronize();
-    //    CUDA_CHECK_LAST_ERROR();
+    uint3 grid  = {1, 1, 1};
+    // printf("invoke LdMatrixM8N8X1\n");
+    // LdMatrixM8N8X1<<<grid, block>>>();
+    // cudaDeviceSynchronize();
+    // CUDA_CHECK_LAST_ERROR();
 
     printf("invoke LdMatrixM8N8X2\n");
     LdMatrixM8N8X2<<<grid, block>>>();
     cudaDeviceSynchronize();
     CUDA_CHECK_LAST_ERROR();
 
-    //    printf("invoke LdMatrixM8N8X4\n");
-    //    LdMatrixM8N8X4<<<grid, block>>>();
-    //    cudaDeviceSynchronize();
-    CUDA_CHECK_LAST_ERROR();
+    // printf("invoke LdMatrixM8N8X4\n");
+    // LdMatrixM8N8X4<<<grid, block>>>();
+    // cudaDeviceSynchronize();
+    // CUDA_CHECK_LAST_ERROR();
 
     cudaDeviceReset();
     return 0;
