@@ -197,7 +197,7 @@ int main(int argc, char *argv[]) {
     // convert matrix c from col-major to row-major
     Transpose2D(matrix_c_host_cublas, N, M);
     printf("compare cpu with cublasGemmEx\n");
-    // CheckResult(matrix_c_host, matrix_c_host_cublas, M * N);
+    CheckResult(matrix_c_host, matrix_c_host_cublas, M * N);
 
     // invoke mma ptx
     half *matrix_c_device_ptx = nullptr;
@@ -207,6 +207,9 @@ int main(int argc, char *argv[]) {
     CUDA_CHECK(cudaMemcpy(matrix_c_host_ptx, matrix_c_device_ptx, M * N * sizeof(half), cudaMemcpyDeviceToHost));
     printf("compare cpu with ptx mma\n");
     CheckResult(matrix_c_host, matrix_c_host_ptx, M * N);
+
+    printf("compare cublas with ptx mma\n");
+    CheckResult(matrix_c_host_cublas, matrix_c_host_ptx, M * N);
 
     cudaFree(matrix_a_device);
     cudaFree(matrix_b_device);
