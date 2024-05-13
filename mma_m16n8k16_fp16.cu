@@ -99,56 +99,54 @@ inline __device__ __host__ size_t div_ceil(size_t a, size_t b) {
 
 __global__ void mmaNaiveKernel(const half *__restrict__ matrix_a, const half *__restrict__ matrix_b,
                                half *__restrict__ matrix_c, size_t M, size_t N, size_t K) {
-    const size_t K_tiles = div_ceil(K, MMA_K);
-
+    const size_t K_tiles  = div_ceil(K, MMA_K);
     const size_t warp_row = blockIdx.y * MMA_M;
     const size_t warp_col = blockIdx.x * MMA_N;
-
     if (warp_row >= M || warp_col >= N) {
         return;
     }
 
-    __shared__ half A_smem[MMA_M][MMA_K];
-    __shared__ half B_smem[MMA_N][MMA_K];
-    __shared__ half C_smem[MMA_M][MMA_N];
+    __shared__ half matrix_a_shared_mem[MMA_M][MMA_K];
+    __shared__ half matrix_b_shared_mem[MMA_N][MMA_K];
+    __shared__ half matrix_c_shared_mem[MMA_M][MMA_N];
 
-    const size_t lane_id = threadIdx.x % WARP_SIZE;
-
-    uint32_t RC[2] = {0, 0};
+    const size_t lane_id          = threadIdx.x % WARP_SIZE;
+    uint32_t matrix_c_register[2] = {0, 0};
 
 #pragma unroll
     for (size_t i = 0; i < K_tiles; ++i) {
-        *((int4 *)(&A_smem[lane_id / 2][0]) + lane_id % 2) =
+        *((int4 *)(&matrix_a_shared_mem[lane_id / 2][0]) + lane_id % 2) =
             *((int4 *)(&matrix_a[(warp_row + lane_id / 2) * K + i * MMA_K]) + lane_id % 2);
 
         if (lane_id < MMA_N * 2) {
-            *((int4 *)(&B_smem[lane_id / 2][0]) + lane_id % 2) =
+            *((int4 *)(&matrix_b_shared_mem[lane_id / 2][0]) + lane_id % 2) =
                 *((int4 *)(&matrix_b[i * MMA_K + (warp_col + lane_id / 2) * K]) + lane_id % 2);
         }
 
         __syncthreads();
 
-        uint32_t RA[4];
-        uint32_t RB[2];
+        uint32_t matrix_a_register[4];
+        uint32_t matrix_b_register[2];
+        // ld row_major matrix_a, shape[16, 16], layout [16, 16]
+        uint32_t matrix_a_shared_mem_lane_addr =
+            __cvta_generic_to_shared(&matrix_a_shared_mem[lane_id % 16][(lane_id / 16) * 8]);
+        LdMatrixX4(matrix_a_register, matrix_a_shared_mem_lane_addr);
+        // ld col_major matrix_b, shape[16, 8], layout [8, 16]
+        uint32_t matrix_b_shared_mem_lane_addr =
+            __cvta_generic_to_shared(&matrix_b_shared_mem[lane_id % 8][((lane_id / 8) % 2) * 8]);
+        LdMatrixX2(matrix_b_register, matrix_b_shared_mem_lane_addr);
 
-        uint32_t A_smem_lane_addr = __cvta_generic_to_shared(&A_smem[lane_id % 16][(lane_id / 16) * 8]);
-        LdMatrixX4(RA, A_smem_lane_addr);
-
-        uint32_t B_smem_lane_addr = __cvta_generic_to_shared(&B_smem[lane_id % 8][((lane_id / 8) % 2) * 8]);
-        LdMatrixX2(RB, B_smem_lane_addr);
-
-        MmaM16N8K16(RC, RA, RB);
+        MmaM16N8K16(matrix_c_register, matrix_a_register, matrix_b_register);
 
         __syncthreads();
     }
     // store
-    *((uint32_t *)(&C_smem[lane_id / 4][0]) + lane_id % 4)     = RC[0];
-    *((uint32_t *)(&C_smem[lane_id / 4 + 8][0]) + lane_id % 4) = RC[1];
-
+    *((uint32_t *)(&matrix_c_shared_mem[lane_id / 4][0]) + lane_id % 4)     = matrix_c_register[0];
+    *((uint32_t *)(&matrix_c_shared_mem[lane_id / 4 + 8][0]) + lane_id % 4) = matrix_c_register[1];
     __syncthreads();
 
     if (lane_id < MMA_M) {
-        *((int4 *)(&matrix_c[(warp_row + lane_id) * N + warp_col])) = *((int4 *)(&C_smem[lane_id][0]));
+        *((int4 *)(&matrix_c[(warp_row + lane_id) * N + warp_col])) = *((int4 *)(&matrix_c_shared_mem[lane_id][0]));
     }
 }
 
@@ -209,7 +207,7 @@ int main(int argc, char *argv[]) {
     CheckResult(matrix_c_host, matrix_c_host_ptx, M * N);
 
     printf("compare cublas with ptx mma\n");
-    CheckResult(matrix_c_host_cublas, matrix_c_host_ptx, M * N);
+    CheckResult(matrix_c_host_cublas, matrix_c_host_ptx, M * N, true);
 
     cudaFree(matrix_a_device);
     cudaFree(matrix_b_device);
