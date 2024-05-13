@@ -153,16 +153,13 @@ void CheckResult(T *stand, T *ref, const int N, bool verbose = false) {
     for (int i = 0; i < N; i++) {
         if (abs((float)stand[i] - (float)ref[i]) > epsilon) {
             printf("the matrix does not align at index: %d\n", i);
-            for (int j = 0; j < print_num; ++j) {
-                printf("stand[%3d]:%f vs ref[%3d]:%f diff: %f\n", j, (float)stand[j], j, (float)ref[j],
-                       (float)stand[j] - (float)ref[j]);
-            }
-            return;
+            verbose = true;
+            break;
         }
     }
     if (verbose) {
         for (int i = 0; i < print_num; ++i) {
-            printf("stand[%3d]:%f vs ref[%3d]:%f diff: %f\n", i, (float)stand[i], i, (float)ref[i],
+            printf("index:%3d: %.6f \tvs \t%.6f \tdiff: %.6f\n", i, (float)stand[i], (float)ref[i],
                    (float)stand[i] - (float)ref[i]);
         }
     }

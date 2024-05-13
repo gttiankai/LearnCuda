@@ -95,11 +95,10 @@ inline __device__ __host__ size_t div_ceil(size_t a, size_t b) {
 #define MMA_M 16
 #define MMA_N 8
 #define MMA_K 16
-
 #define WARP_SIZE 32
 
-__global__ void mmaNaiveKernel(const half *__restrict__ A, const half *__restrict__ B, half *__restrict__ C, size_t M,
-                               size_t N, size_t K) {
+__global__ void mmaNaiveKernel(const half *__restrict__ matrix_a, const half *__restrict__ matrix_b,
+                               half *__restrict__ matrix_c, size_t M, size_t N, size_t K) {
     const size_t K_tiles = div_ceil(K, MMA_K);
 
     const size_t warp_row = blockIdx.y * MMA_M;
@@ -120,11 +119,11 @@ __global__ void mmaNaiveKernel(const half *__restrict__ A, const half *__restric
 #pragma unroll
     for (size_t i = 0; i < K_tiles; ++i) {
         *((int4 *)(&A_smem[lane_id / 2][0]) + lane_id % 2) =
-            *((int4 *)(&A[(warp_row + lane_id / 2) * K + i * MMA_K]) + lane_id % 2);
+            *((int4 *)(&matrix_a[(warp_row + lane_id / 2) * K + i * MMA_K]) + lane_id % 2);
 
         if (lane_id < MMA_N * 2) {
             *((int4 *)(&B_smem[lane_id / 2][0]) + lane_id % 2) =
-                *((int4 *)(&B[i * MMA_K + (warp_col + lane_id / 2) * K]) + lane_id % 2);
+                *((int4 *)(&matrix_b[i * MMA_K + (warp_col + lane_id / 2) * K]) + lane_id % 2);
         }
 
         __syncthreads();
@@ -149,14 +148,14 @@ __global__ void mmaNaiveKernel(const half *__restrict__ A, const half *__restric
     __syncthreads();
 
     if (lane_id < MMA_M) {
-        *((int4 *)(&C[(warp_row + lane_id) * N + warp_col])) = *((int4 *)(&C_smem[lane_id][0]));
+        *((int4 *)(&matrix_c[(warp_row + lane_id) * N + warp_col])) = *((int4 *)(&C_smem[lane_id][0]));
     }
 }
 
-void MMAPTX(const half *A, const half *B, half *C, size_t M, size_t N, size_t K) {
+void MMAPTX(const half *matrix_a, const half *matrix_b, half *matrix_c, size_t M, size_t N, size_t K) {
     dim3 block(WARP_SIZE);
     dim3 grid(div_ceil(N, MMA_N), div_ceil(M, MMA_M));
-    mmaNaiveKernel<<<grid, block>>>(A, B, C, M, N, K);
+    mmaNaiveKernel<<<grid, block>>>(matrix_a, matrix_b, matrix_c, M, N, K);
 }
 
 int main(int argc, char *argv[]) {
@@ -175,8 +174,8 @@ int main(int argc, char *argv[]) {
     GenerateRandomData(matrix_b_host, K, N);
     // implement gemm with cpu
     Gemm(matrix_a_host, matrix_b_host, matrix_c_host, M, N, K);
-
-    Transpose2D(matrix_a_host, M, K);
+    // convert matrix b from row-major to col-major, matrix_b[K, N] -> matrix[N, K]
+    Transpose2D(matrix_b_host, K, N);
     half *matrix_a_device, *matrix_b_device, *matrix_c_device;
     CUDA_CHECK(cudaMalloc(&matrix_a_device, M * K * sizeof(half)));
     CUDA_CHECK(cudaMalloc(&matrix_b_device, K * N * sizeof(half)));
@@ -188,14 +187,14 @@ int main(int argc, char *argv[]) {
     cublasHandle_t handle;
     cublasStatus_t status = cublasCreate(&handle);
     CUBLAS_CHECK(status);
-    status = cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_T, M, N, K, &alpha_device, matrix_a_device, CUDA_R_16F, M,
-                          matrix_b_device, CUDA_R_16F, N, &beta_device, matrix_c_device, CUDA_R_16F, M, CUDA_R_16F,
+    status = cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N, M, N, K, &alpha_device, matrix_a_device, CUDA_R_16F, K,
+                          matrix_b_device, CUDA_R_16F, K, &beta_device, matrix_c_device, CUDA_R_16F, M, CUDA_R_16F,
                           CUBLAS_GEMM_DEFAULT);
     CUBLAS_CHECK(status);
 
     auto *matrix_c_host_cublas = new half[M * N]();
     CUDA_CHECK(cudaMemcpy(matrix_c_host_cublas, matrix_c_device, M * N * sizeof(half), cudaMemcpyDeviceToHost));
-    // checkResult(matrix_c_host, matrix_c_host_check, M * N);
+    // convert matrix c from col-major to row-major
     Transpose2D(matrix_c_host_cublas, N, M);
     printf("compare cpu with cublasGemmEx\n");
     // CheckResult(matrix_c_host, matrix_c_host_cublas, M * N);
