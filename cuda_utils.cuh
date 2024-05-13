@@ -13,8 +13,9 @@
 // specific language governing permissions and limitations under the License.
 
 #pragma once
-
+#include <cublas_v2.h>
 #include <cuda_runtime.h>
+#include <cassert>
 #include <cstdio>
 #include <iostream>
 

@@ -80,25 +80,17 @@ int main(int argc, char *argv[]) {
     float beta_device  = 0.0f;
     cublasHandle_t handle;
     cublasStatus_t status = cublasCreate(&handle);
-    if (status != CUBLAS_STATUS_SUCCESS) {
-        std::cerr << "CUBLAS error: " << status << " at " << __FILE__ << ":" << __LINE__ << std::endl;
-        return -1;
-    }
+    CUBLAS_CHECK(status);
     status = cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_T, M, N, K, &alpha_device, matrix_a_device, CUDA_R_32F, M,
                           matrix_b_device, CUDA_R_32F, N, &beta_device, matrix_c_device, CUDA_R_32F, M, CUDA_R_32F,
                           CUBLAS_GEMM_DEFAULT);
-    if (status != CUBLAS_STATUS_SUCCESS) {
-        cudaError_t error = cudaGetLastError();
-        std::cerr << "CUBLAS error: " << __FILE__ << ":" << __LINE__ << " line get cublas error(" << status << ") "
-                  << cudaGetErrorString(error) << std::endl;
-        return -1;
-    }
+    CUBLAS_CHECK(status);
 
     auto *matrix_c_host_check = new float[M * N]();
     CUDA_CHECK(cudaMemcpy(matrix_c_host_check, matrix_c_device, M * N * sizeof(float), cudaMemcpyDeviceToHost));
     // checkResult(matrix_c_host, matrix_c_host_check, M * N);
     Transpose2D(matrix_c_host_check, N, M);
-    checkResult(matrix_c_host, matrix_c_host_check, M * N);
+    CheckResult(matrix_c_host, matrix_c_host_check, M * N);
 
     cudaFree(matrix_a_device);
     cudaFree(matrix_b_device);
