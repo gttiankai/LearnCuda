@@ -97,7 +97,7 @@ inline __device__ __host__ size_t div_ceil(size_t a, size_t b) {
 #define MMA_K 16
 #define WARP_SIZE 32
 
-__global__ void mmaNaiveKernel(const half *__restrict__ matrix_a, const half *__restrict__ matrix_b,
+__global__ void MmaNaiveKernel(const half *__restrict__ matrix_a, const half *__restrict__ matrix_b,
                                half *__restrict__ matrix_c, size_t M, size_t N, size_t K) {
     const size_t K_tiles  = div_ceil(K, MMA_K);
     const size_t warp_row = blockIdx.y * MMA_M;
@@ -105,7 +105,6 @@ __global__ void mmaNaiveKernel(const half *__restrict__ matrix_a, const half *__
     if (warp_row >= M || warp_col >= N) {
         return;
     }
-
     __shared__ half matrix_a_shared_mem[MMA_M][MMA_K];
     __shared__ half matrix_b_shared_mem[MMA_N][MMA_K];
     __shared__ half matrix_c_shared_mem[MMA_M][MMA_N];
@@ -122,7 +121,6 @@ __global__ void mmaNaiveKernel(const half *__restrict__ matrix_a, const half *__
             *((int4 *)(&matrix_b_shared_mem[lane_id / 2][0]) + lane_id % 2) =
                 *((int4 *)(&matrix_b[i * MMA_K + (warp_col + lane_id / 2) * K]) + lane_id % 2);
         }
-
         __syncthreads();
 
         uint32_t matrix_a_register[4];
@@ -137,23 +135,32 @@ __global__ void mmaNaiveKernel(const half *__restrict__ matrix_a, const half *__
         LdMatrixX2(matrix_b_register, matrix_b_shared_mem_lane_addr);
 
         MmaM16N8K16(matrix_c_register, matrix_a_register, matrix_b_register);
-
         __syncthreads();
     }
     // store
     *((uint32_t *)(&matrix_c_shared_mem[lane_id / 4][0]) + lane_id % 4)     = matrix_c_register[0];
     *((uint32_t *)(&matrix_c_shared_mem[lane_id / 4 + 8][0]) + lane_id % 4) = matrix_c_register[1];
     __syncthreads();
-
+    // matrix_c row-major shape:[M, N], layout:[M, N], [16, 8]
     if (lane_id < MMA_M) {
         *((int4 *)(&matrix_c[(warp_row + lane_id) * N + warp_col])) = *((int4 *)(&matrix_c_shared_mem[lane_id][0]));
     }
 }
-
+/**
+ * Matrix multiply-accumulate operation
+ *      matrix_c = matrix_a * matrix_b
+ * matrix_a:
+ *      shape:[M, K], layout:[M, k], row-major
+ * matrix_b:
+ *      shape:[K, N], layout:[K, N], col-major
+ * matrix_c:
+ *      shape:[M, N], layout:[M, N], row-major
+ *
+ * */
 void MMAPTX(const half *matrix_a, const half *matrix_b, half *matrix_c, size_t M, size_t N, size_t K) {
     dim3 block(WARP_SIZE);
     dim3 grid(div_ceil(N, MMA_N), div_ceil(M, MMA_M));
-    mmaNaiveKernel<<<grid, block>>>(matrix_a, matrix_b, matrix_c, M, N, K);
+    MmaNaiveKernel<<<grid, block>>>(matrix_a, matrix_b, matrix_c, M, N, K);
 }
 
 int main(int argc, char *argv[]) {
