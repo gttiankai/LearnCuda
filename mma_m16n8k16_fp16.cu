@@ -167,7 +167,7 @@ __device__ __forceinline__ void ConvertFp32ToFp16(uint32_t *__restrict__ fp16_re
                                                   uint32_t *__restrict__ fp32_register) {
     const int N = 4;
     for (int i = 0; i < N; ++i) {
-        *(reinterpret_cast<half *>(fp16_register)) = __float2half_rn(*(reinterpret_cast<float *>(fp16_register)));
+        *(reinterpret_cast<half *>(fp16_register)) = __float2half_rn(*(reinterpret_cast<float *>(fp32_register)));
     }
 }
 
