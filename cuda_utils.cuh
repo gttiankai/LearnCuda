@@ -17,7 +17,10 @@
 #include <cuda_runtime.h>
 #include <cassert>
 #include <cstdio>
+#include <iomanip>
 #include <iostream>
+#include <random>
+#include <string>
 
 #define CUDA_CHECK(call)                                                     \
     {                                                                        \
@@ -148,7 +151,7 @@ void initDevice(int devNum) {
 
 template <typename T>
 void CheckResult(T *stand, T *ref, const int N, bool verbose = false) {
-    double epsilon = 1.0E-3;
+    double epsilon = 1.0E-5;
     int print_num  = std::min(128, N);
     for (int i = 0; i < N; i++) {
         if (abs((float)stand[i] - (float)ref[i]) > epsilon) {
@@ -174,7 +177,7 @@ void CheckResult(T *stand, T *ref, const int N, bool verbose = false) {
 template <typename T>
 void Transpose2D(T *matrix, const int M, const int N) {
     assert(matrix != nullptr);
-    auto buffer = new float[M * N]();
+    auto buffer = new T[M * N]();
     for (int m = 0; m < M; m++) {
         for (int n = 0; n < N; n++) {
             buffer[n * M + m] = matrix[m * N + n];
@@ -182,4 +185,43 @@ void Transpose2D(T *matrix, const int M, const int N) {
     }
     memcpy(matrix, buffer, M * N * sizeof(T));
     delete[] buffer;
+}
+
+template <typename T, int M, int N>
+void PrintMatrix(T *matrix) {
+    assert(matrix != nullptr);
+    printf("Matrix[%d][%d]\n", M, N);
+    std::cout << "   ";
+    for (int i = 0; i < N; ++i) {
+        std::cout << std::setw(9) << i << " ";
+    }
+    std::cout << std::endl;
+    for (int m = 0; m < M; m++) {
+        std::cout << std::setw(3) << m << "   ";
+        for (int n = 0; n < N; n++) {
+            // 设置输出格式
+            std::cout << std::fixed << std::setprecision(6);
+            // 输出 16 个浮点数
+            std::cout << std::setw(9) << (float)matrix[m * N + n] << " ";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl << std::endl;
+}
+
+template <typename T>
+void GenerateRandomFloatData(T *matrix, int m, int n, int sed) {
+    assert(matrix != nullptr);
+    assert(m >= 0);
+    assert(n >= 0);
+    // std::random_device rd;
+    // std::mt19937 gen(rd());
+    // 使用固定的种子,使生成的随机数固定
+    std::mt19937 gen(sed);
+    std::uniform_real_distribution<float> dis(-1.0, 1.0);
+    for (int i = 0; i < m; i++) {
+        for (int j = 0; j < n; j++) {
+            matrix[i * n + j] = (T)dis(gen);
+        }
+    }
 }

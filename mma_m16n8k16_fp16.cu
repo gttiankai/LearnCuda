@@ -16,35 +16,8 @@
 #include <cuda_runtime.h>
 #include <cassert>
 #include <iostream>
-#include <random>
 
 #include "cuda_utils.cuh"
-
-void GenerateRandomData(half *matrix, int m, int n) {
-    assert(matrix != nullptr);
-    assert(m >= 0);
-    assert(n >= 0);
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> dis(-1.0, 1.0);
-    for (int i = 0; i < m; i++) {
-        for (int j = 0; j < n; j++) {
-            matrix[i * n + j] = (half)dis(gen);
-        }
-    }
-}
-
-void Transpose2D(half *matrix, const int M, const int N) {
-    assert(matrix != nullptr);
-    auto buffer = new half[M * N]();
-    for (int m = 0; m < M; m++) {
-        for (int n = 0; n < N; n++) {
-            buffer[n * M + m] = matrix[m * N + n];
-        }
-    }
-    memcpy(matrix, buffer, M * N * sizeof(half));
-    delete[] buffer;
-}
 
 void Gemm(const half *matrix_a, const half *matrix_b, half *matrix_c, const int M, const int N, const int K) {
     assert(matrix_a != nullptr);
@@ -254,8 +227,8 @@ int main(int argc, char *argv[]) {
     auto *matrix_b_host = new half[K * N]();
     auto *matrix_c_host = new half[M * N]();
 
-    GenerateRandomData(matrix_a_host, M, K);
-    GenerateRandomData(matrix_b_host, K, N);
+    GenerateRandomFloatData<half>(matrix_a_host, M, K, 0);
+    GenerateRandomFloatData<half>(matrix_b_host, K, N, 1);
     // implement gemm with cpu
     Gemm(matrix_a_host, matrix_b_host, matrix_c_host, M, N, K);
     // convert matrix b from row-major to col-major, matrix_b[K, N] -> matrix[N, K]
