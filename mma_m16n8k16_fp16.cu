@@ -146,6 +146,84 @@ __global__ void MmaNaiveKernel(const half *__restrict__ matrix_a, const half *__
         *((int4 *)(&matrix_c[(warp_row + lane_id) * N + warp_col])) = *((int4 *)(&matrix_c_shared_mem[lane_id][0]));
     }
 }
+
+__device__ __forceinline__ void MmaM16N8K16Fp32(uint32_t *c, uint32_t *a, uint32_t *b) {
+#ifdef CUTE_ARCH_CP_ASYNC_SM80_ENABLED
+    asm volatile(
+        "mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32"
+        "{ %0, %1, %2, %3 },"
+        "{ %4, %5, %6, %7 },"
+        "{ %8, %9 },"
+        "{ %10, %11, %12, %13 };"
+        : "=r"(c[0]), "=r"(c[1]),"=r"(c[2]), "=r"(c[3])
+        : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]),
+          "r"(b[0]), "r"(b[1]),
+          "r"(c[0]), "r"(c[1]), "r"(c[2]), "r"(c[3])
+    );
+#endif
+}
+
+__device__ __forceinline__ void ConvertFp32ToFp16(uint32_t *__restrict__ fp16_register,
+                                                  uint32_t *__restrict__ fp32_register) {
+    const int N = 4;
+    for (int i = 0; i < N; ++i) {
+        *(reinterpret_cast<half *>(fp16_register)) = __float2half_rn(*(reinterpret_cast<float *>(fp16_register)));
+    }
+}
+
+__global__ void MmaNaiveKernelFp32(const half *__restrict__ matrix_a, const half *__restrict__ matrix_b,
+                               half *__restrict__ matrix_c, size_t M, size_t N, size_t K) {
+    const size_t K_tiles  = div_ceil(K, MMA_K);
+    const size_t warp_row = blockIdx.y * MMA_M;
+    const size_t warp_col = blockIdx.x * MMA_N;
+    if (warp_row >= M || warp_col >= N) {
+        return;
+    }
+    __shared__ half matrix_a_shared_mem[MMA_M][MMA_K];
+    __shared__ half matrix_b_shared_mem[MMA_N][MMA_K];
+    __shared__ half matrix_c_shared_mem[MMA_M][MMA_N];
+
+    const size_t lane_id               = threadIdx.x % WARP_SIZE;
+    uint32_t matrix_c_register[4]      = {0, 0, 0, 0};
+    uint32_t matrix_c_register_fp16[2] = {0, 0};
+
+#pragma unroll
+    for (size_t i = 0; i < K_tiles; ++i) {
+        *((int4 *)(&matrix_a_shared_mem[lane_id / 2][0]) + lane_id % 2) =
+            *((int4 *)(&matrix_a[(warp_row + lane_id / 2) * K + i * MMA_K]) + lane_id % 2);
+
+        if (lane_id < MMA_N * 2) {
+            *((int4 *)(&matrix_b_shared_mem[lane_id / 2][0]) + lane_id % 2) =
+                *((int4 *)(&matrix_b[i * MMA_K + (warp_col + lane_id / 2) * K]) + lane_id % 2);
+        }
+        __syncthreads();
+
+        uint32_t matrix_a_register[4];
+        uint32_t matrix_b_register[2];
+        // ld row_major matrix_a, shape[16, 16], layout [16, 16]
+        uint32_t matrix_a_shared_mem_lane_addr =
+            __cvta_generic_to_shared(&matrix_a_shared_mem[lane_id % 16][(lane_id / 16) * 8]);
+        LdMatrixX4(matrix_a_register, matrix_a_shared_mem_lane_addr);
+        // ld col_major matrix_b, shape[16, 8], layout [8, 16]
+        uint32_t matrix_b_shared_mem_lane_addr =
+            __cvta_generic_to_shared(&matrix_b_shared_mem[lane_id % 8][((lane_id / 8) % 2) * 8]);
+        LdMatrixX2(matrix_b_register, matrix_b_shared_mem_lane_addr);
+
+        MmaM16N8K16Fp32(matrix_c_register, matrix_a_register, matrix_b_register);
+        __syncthreads();
+    }
+    ConvertFp32ToFp16(matrix_c_register_fp16, matrix_c_register);
+    // store
+    *((uint32_t *)(&matrix_c_shared_mem[lane_id / 4][0]) + lane_id % 4)     = matrix_c_register_fp16[0];
+    *((uint32_t *)(&matrix_c_shared_mem[lane_id / 4 + 8][0]) + lane_id % 4) = matrix_c_register_fp16[1];
+    __syncthreads();
+    // matrix_c row-major shape:[M, N], layout:[M, N], [16, 8]
+    if (lane_id < MMA_M) {
+        *((int4 *)(&matrix_c[(warp_row + lane_id) * N + warp_col])) = *((int4 *)(&matrix_c_shared_mem[lane_id][0]));
+    }
+}
+
+
 /**
  * Matrix multiply-accumulate operation
  *      matrix_c = matrix_a * matrix_b
@@ -160,7 +238,8 @@ __global__ void MmaNaiveKernel(const half *__restrict__ matrix_a, const half *__
 void MMAPTX(const half *matrix_a, const half *matrix_b, half *matrix_c, size_t M, size_t N, size_t K) {
     dim3 block(WARP_SIZE);
     dim3 grid(div_ceil(N, MMA_N), div_ceil(M, MMA_M));
-    MmaNaiveKernel<<<grid, block>>>(matrix_a, matrix_b, matrix_c, M, N, K);
+    //MmaNaiveKernel<<<grid, block>>>(matrix_a, matrix_b, matrix_c, M, N, K);
+    MmaNaiveKernelFp32<<<grid, block>>>(matrix_a, matrix_b, matrix_c, M, N, K);
 }
 
 int main(int argc, char *argv[]) {
