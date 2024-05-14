@@ -295,6 +295,9 @@ int main(int argc, char *argv[]) {
     printf("compare cublas with ptx mma\n");
     CheckResult(matrix_c_host_cublas, matrix_c_host_ptx, M * N, true);
 
+    printf("compare cpu with ptx mma\n");
+    CheckResult(matrix_c_host, matrix_c_host_ptx, M * N, true);
+
     cudaFree(matrix_a_device);
     cudaFree(matrix_b_device);
     cudaFree(matrix_c_device);
